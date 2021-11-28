@@ -121,12 +121,12 @@ struct Triangle:public Primitive
 	{
 		const Vec& rayOrigin=ray.o;
 		const Vec& directionOfRay=ray.d;
-		const float eps = 0.0000001;
+		const double eps = 1e-4;
 
 		Vec edge1 = vertex1 - vertex0;
 		Vec edge2 = vertex2 - vertex0;
 		n = directionOfRay.cross(edge2);
-		float det = edge1.dot(n);
+		double det = edge1.dot(n);
 		
 		if (det > -eps && det < eps)
 		{
@@ -135,9 +135,9 @@ struct Triangle:public Primitive
 		}
 
 
-		float inverseDet = 1.0/det;
+		double inverseDet = 1.0/det;
 		Vec s = rayOrigin - vertex0;
-		float u = s.dot(n) * inverseDet;
+		double u = s.dot(n) * inverseDet;
 
 		if (u < 0.0 || u > 1.0)
 		{
@@ -145,18 +145,18 @@ struct Triangle:public Primitive
 		}
 
 		Vec q = s.cross(edge1);
-		float v = directionOfRay.dot(q)*inverseDet ;
+		double v = directionOfRay.dot(q)*inverseDet ;
 
 		if (v < 0.0 || u + v > 1.0 )
 		{
 			return 0.0;
 		}
 		
-		float t = edge2.dot(q) * inverseDet;
+		double t = edge2.dot(q) * inverseDet;
 		if (t > eps) // ray intersection
-		{
-			x = rayOrigin + directionOfRay * t;
+		{		
 			n=edge1.cross(edge2).normalize();
+			x = rayOrigin + directionOfRay * t;
 			return t;
 		}
 		else //line intersection
@@ -179,8 +179,8 @@ std::vector<Primitive*> primitives =
 	new Sphere(1e5, Vec(0, 0, -1e5 - BOX_HZ), Vec(), Vec(0.75, 0.75, 0.75), DIFF),  // Back 
 	new Sphere(1e5, Vec(0, 0,  1e5 + 3 * BOX_HZ - 0.5), Vec(), Vec(), DIFF),        // Front
 	// Objects
-	new Sphere(0.8, Vec(-1.3, -BOX_HY + 0.8, -1.3), Vec(), Vec(1,1,1) * 0.999, SPEC), // mirroring
-	new Sphere(0.8, Vec(1.3, -BOX_HY + 0.8, -0.2), Vec(), Vec(1,1,1) * 0.999, REFR),  // refracting
+    //new Sphere(0.8, Vec(-1.3, -BOX_HY + 0.8, -1.3), Vec(), Vec(1,1,1) * 0.999, SPEC), // mirroring
+	//new Sphere(0.8, Vec(1.3, -BOX_HY + 0.8, -0.2), Vec(), Vec(1,1,1) * 0.999, REFR),  // refracting
     // The ceiling area light source (slightly yellowish color)
 	new Sphere(10, Vec(0, BOX_HY + 10 - 0.04, 0), Vec(0.98, 1., 0.9) * 15, Vec(0.0, 0.0, 0.0), DIFF),
 };
@@ -267,6 +267,9 @@ Vec radiance(const Ray &r, int depth)
 
 int main(int argc, char *argv[]) 
 {
+	Primitive* lighSource=primitives.back();//Save the light source
+	primitives.pop_back();//remove it from vector.
+
 	fstream theShape(MODEL);
 	string token;
 	vector<string> allOfContent;
@@ -317,9 +320,9 @@ int main(int argc, char *argv[])
 	{
 		primitives.push_back(new Triangle(groupVertexVector.at(indexVector.at(i)), 
 										  groupVertexVector.at(indexVector.at(i+1)), 
-										  groupVertexVector.at(indexVector.at(i+2)),Vec(), Vec(1, 1., 0.9),SPEC));
+										  groupVertexVector.at(indexVector.at(i+2)),Vec(), Vec(1, 1., 0.9),REFR));
 	}
-
+	primitives.push_back(lighSource);
 
     //-- parameter info
 	if (argc >= 2 && *argv[1] == '?') {
