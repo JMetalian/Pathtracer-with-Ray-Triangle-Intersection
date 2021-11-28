@@ -1,5 +1,5 @@
 #define MODEL "tetraeder.off"
-#include <stdlib.h>     // single-source path tracer based on smallpt by Kevin Beason 
+#include <stdlib.h>  
 #include <stdio.h>      // Make: g++ -O3 -fopenmp cgrpt1.cpp -o cgrpt
 #include <omp.h>        // Usage: ./cgrpt <samplesPerPixel> <y-resolution>, e.g.: ./cgrpt 4000 600     
 #include <random>
