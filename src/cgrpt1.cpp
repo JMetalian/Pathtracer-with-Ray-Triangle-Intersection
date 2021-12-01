@@ -1,13 +1,15 @@
-#define MODEL "tetraeder.off"
+#define MODEL "tetraeder.off" 
 #include <stdlib.h>  
-#include <stdio.h>      // Make: g++ -O3 -fopenmp cgrpt1.cpp -o cgrpt
-#include <omp.h>        // Usage: ./cgrpt <samplesPerPixel> <y-resolution>, e.g.: ./cgrpt 4000 600     
+#include <stdio.h>      // Make: g++ -O3 -fopenmp cgrpt1.cpp -o cgrpt for compilation
+#include <omp.h>        // Usage: ./cgrpt <samplesPerPixel> <y-resolution>, e.g.: ./cgrpt 500 800 (for Motion Blur, pass "-withMB")  for execution
 #include <random>
 #include <string>
 #include <vector>
 #include <fstream>
 #include <sstream>
 #include <chrono>
+#include <iostream>
+#include <cstring>
 
 using namespace std;
 
@@ -15,6 +17,11 @@ using namespace std;
 double rand01() {
 	static std::default_random_engine generator;
 	static std::uniform_real_distribution<double> distr(0.0, 1.0);
+	return distr(generator);
+}
+double rand01(double x, double y) {
+	static std::default_random_engine generator;
+	static std::uniform_real_distribution<double> distr(x,y);
 	return distr(generator);
 }
 inline double clamp(double x) { return x < 0 ? 0 : x > 1 ? 1 : x; }
@@ -36,16 +43,16 @@ struct Vec {
 	Vec cross(const Vec& b) const { return Vec(y*b.z - z * b.y, z*b.x - x * b.z, x*b.y - y * b.x); }
 	double length() const { return sqrt(x*x + y * y + z * z); }
 };
-
+const double time1=0.1;
+const double time2=1.5;
 // 3d ray class
 struct Ray {
 	Vec o, d;		// origin and direction 
-	Ray(Vec o_, Vec d_) : o(o_), d(d_) {}
+	double rayTime;
+	Ray(Vec o_, Vec d_, double rt) : o(o_), d(d_), rayTime(rt) {} //Added time parameter
 };
-
 // material types
 enum Refl_t { DIFF, SPEC, REFR };
-
 // base class for geometric primitives
 struct Primitive {
 	Vec e, c;      // emission, color
@@ -53,28 +60,36 @@ struct Primitive {
 	
     virtual double intersect(const Ray& r, Vec& x, Vec& n) const = 0;   // returns distance, 0 if no hit
 };
-
-
 // simple sphere object class
 struct Sphere : public Primitive {
 	Vec p;			  // position
 	double rad;       // radius
+	bool applyMB; //apply motion blur flag
 
-	Sphere(double rad_, const Vec& p_, const Vec& e_, const Vec& c_, Refl_t refl_) {
-		rad = rad_, p = p_, e = e_, c = c_, refl = refl_;
+	Sphere(double rad_, const Vec& p_, const Vec& e_, const Vec& c_, Refl_t refl_,bool applyMB_=false) {
+		rad = rad_, p = p_, e = e_, c = c_, refl = refl_,applyMB=applyMB_;
 	}
-
 	virtual double intersect(const Ray& r, Vec& x, Vec& n) const {
 		// Solve t^2*d.d + 2*t*(o-p).d + (o-p).(o-p)-R^2 = 0
-		Vec op = p - r.o;
+		Vec posCopy;
+		if(applyMB==true) //apply motion blur if true flag is there
+		{	
+			posCopy=p+0.2*r.rayTime;
+		}
+		else
+		{
+			posCopy=p;
+		}
+		Vec op = posCopy - r.o;
 		double t, eps = 1e-4, b = op.dot(r.d), det = b * b - op.dot(op) + rad * rad;
 		if (det < 0) return 0; else det = sqrt(det);
 		if ((t = b - det) < eps && (t = b + det) < eps) return 0;
 		x = r.o + r.d*t;
-		n = (x - p).normalize();
+		n = (x - posCopy).normalize();
 		return t;
 	}
 };
+
 struct Triangle:public Primitive
 {
 	Vec vertex0;
@@ -96,10 +111,8 @@ struct Triangle:public Primitive
 		c=color;
 		e=emission;
 		refl=reflectionType;
-
 	}
-
-//REAL TIME RENDERING 4th Edition, Pseuodocode Möller-Trumbore Algorithm
+// REAL TIME RENDERING 4th Edition, Pseuodocode Möller-Trumbore Algorithm
 // RayTriIntersect(o, d, p0, p1, p2)
 // returns ({REJECT, INTERSECT}, u, v, t);
 // 1 : e1 = p1 − p0
@@ -116,7 +129,6 @@ struct Triangle:public Primitive
 // 12 : if(v < 0.0 or u + v > 1.0) return (REJECT, 0, 0, 0);
 // 13 : t = f(e2 · r)
 // 14 : return (INTERSECT, u, v, t);
-
 	virtual double intersect(const Ray &ray, Vec& x, Vec& n) const
 	{
 		const Vec& rayOrigin=ray.o;
@@ -133,7 +145,6 @@ struct Triangle:public Primitive
 			return 0.0;    // Ray and Triangle are parallel. (Determinant is close to zero)
 						 //or missed
 		}
-
 
 		double inverseDet = 1.0/det;
 		Vec s = rayOrigin - vertex0;
@@ -163,11 +174,9 @@ struct Triangle:public Primitive
 			return 0.0;
 	}
 };
-
-
 //---- setup scene (length units in in meters)
 #define BOX_HX	2.6
-#define BOX_HY	2
+#define BOX_HY	2	
 #define BOX_HZ	2.8
 std::vector<Primitive*> primitives =
 {
@@ -175,24 +184,22 @@ std::vector<Primitive*> primitives =
 	new Sphere(1e5, Vec(-1e5 - BOX_HX, 0, 0), Vec(), Vec(0.85, 0.25, 0.25), DIFF),  // Left
 	new Sphere(1e5, Vec(1e5 + BOX_HX, 0, 0),  Vec(), Vec(0.25, 0.35, 0.85), DIFF),  // Right
 	new Sphere(1e5, Vec(0, 1e5 + BOX_HY, 0),  Vec(), Vec(0.75, 0.75, 0.75), DIFF),  // Top
-	new Sphere(1e5, Vec(0,-1e5 - BOX_HY, 0),  Vec(), Vec(0.75, 0.75, 0.75), DIFF),  // Bottom
-	new Sphere(1e5, Vec(0, 0, -1e5 - BOX_HZ), Vec(), Vec(0.75, 0.75, 0.75), DIFF),  // Back 
+	new Sphere(1e5, Vec(0,-1e5 - BOX_HY, 0),  Vec(), Vec(0, 0.90, 0.0), DIFF),  // Bottom
+	new Sphere(1e5, Vec(0, 0, -1e5 - BOX_HZ), Vec(), Vec(100.0/255.0, 21.0/255.0, 110.0/255.0), DIFF),  // Back 
 	new Sphere(1e5, Vec(0, 0,  1e5 + 3 * BOX_HZ - 0.5), Vec(), Vec(), DIFF),        // Front
 	// Objects
-    //new Sphere(0.8, Vec(-1.3, -BOX_HY + 0.8, -1.3), Vec(), Vec(1,1,1) * 0.999, SPEC), // mirroring
-	//new Sphere(0.8, Vec(1.3, -BOX_HY + 0.8, -0.2), Vec(), Vec(1,1,1) * 0.999, REFR),  // refracting
+    new Sphere(0.8, Vec(-1.3, -BOX_HY + 0.8, -1.3), Vec(), Vec(1,1,1) * 0.999, SPEC,true), // mirroring  //ORIGINAL
+	new Sphere(0.8, Vec(1.3, -BOX_HY + 0.8, -0.2), Vec(), Vec(1,1,1) * 0.999, REFR,true),  // refracting  //ORIGINAL
     // The ceiling area light source (slightly yellowish color)
 	new Sphere(10, Vec(0, BOX_HY + 10 - 0.04, 0), Vec(0.98, 1., 0.9) * 15, Vec(0.0, 0.0, 0.0), DIFF),
 };
-
-
 inline bool intersect(const Ray &r, int& id, double &t, Vec& x, Vec& n) 
 {
 	Vec xmin, nmin;
 	double d, inf = t = 1e20;
 	for (int i = primitives.size(); i--;)
 	{
-		if ((d = primitives[i]->intersect(r, xmin, nmin)) && d < t)
+		if ((d = primitives.at(i)->intersect(r, xmin, nmin)) && d < t)
 		{
 			t = d;
 			id = i;
@@ -202,8 +209,6 @@ inline bool intersect(const Ray &r, int& id, double &t, Vec& x, Vec& n)
 	}
 	return t < inf;
 }
-
-
 #define MAX_DEPTH 12
 Vec radiance(const Ray &r, int depth) 
 {
@@ -235,16 +240,16 @@ Vec radiance(const Ray &r, int depth)
 		Vec w = nl, u = ((fabs(w.x)>.1 ? Vec(0, 1) : Vec(1)).cross(w)).normalize(), v = w.cross(u);
 		Vec d = (u*cos(r1)*r2s + v * sin(r1)*r2s + w * sqrt(1 - r2)).normalize();
 
-		return obj.e + f.mult(radiance(Ray(x, d), depth));
+		return obj.e + f.mult(radiance(Ray(x, d,r.rayTime), depth));
 	}
 	//--- Ideal SPECULAR reflection
 	else if (obj.refl == SPEC) 
     {
-		return obj.e + f.mult(radiance(Ray(x, r.d - n * 2 * n.dot(r.d)), depth));
+		return obj.e + f.mult(radiance(Ray(x, r.d - n * 2 * n.dot(r.d),r.rayTime), depth));
 	}
 	//--- Ideal dielectric REFRACTION
 	else {
-		Ray reflRay(x, r.d - n * 2 * n.dot(r.d));
+		Ray reflRay(x, r.d - n * 2 * n.dot(r.d),r.rayTime);
 		bool into = n.dot(nl) > 0;					// Ray from outside going in?
 		double nc = 1, nt = 1.5, nnt = into ? nc / nt : nt / nc, ddn = r.d.dot(nl), cos2t;
 
@@ -257,44 +262,43 @@ Vec radiance(const Ray &r, int depth)
 		double Re = R0 + (1 - R0)*c*c*c*c*c, Tr = 1 - Re, P = .25 + .5*Re, RP = Re / P, TP = Tr / (1 - P);
 
 		Vec L = depth > 2 ?
-			(rand01() < P ? radiance(reflRay, depth)*RP : radiance(Ray(x, tdir), depth) * TP) :	// Russian roulette
-			radiance(reflRay, depth)*Re + radiance(Ray(x, tdir), depth)*Tr;
+			(rand01() < P ? radiance(reflRay, depth)*RP : radiance(Ray(x, tdir,r.rayTime), depth) * TP) :	// Russian roulette
+			radiance(reflRay, depth)*Re + radiance(Ray(x, tdir,r.rayTime), depth)*Tr;
 
 		return obj.e + f.mult(L);
 	}
 }
-
-
 int main(int argc, char *argv[]) 
 {
 	Primitive* lighSource=primitives.back();//Save the light source
 	primitives.pop_back();//remove it from vector.
 
-	fstream theShape(MODEL);
+	//Start of OFF Loader
+	fstream theShape(MODEL); //read the model
 	string token;
 	vector<string> allOfContent;
 
-	while (getline(theShape,token))
+	while (getline(theShape,token)) 
 	{
 		istringstream stringStream(token);
 		while (stringStream >> token)
 		{
-			allOfContent.push_back(token);
+			allOfContent.push_back(token); //put all of the info in off file to allofContent vector
 		}
 	}
 	for(int i=1; i<allOfContent.size();i++)
 	{
-		allOfContent.at(i-1)=allOfContent.at(i);
+		allOfContent.at(i-1)=allOfContent.at(i); //remove OFF from 0
 	}
 
-	int vertexStoppingCriteria=stoi(allOfContent.at(0)); //4
-	int indexStoppingCriteria=stoi(allOfContent.at(1)); //4
+	int vertexStoppingCriteria=stoi(allOfContent.at(0));//Vector Count
+	int indexStoppingCriteria=stoi(allOfContent.at(1)); //Index Count
 
 	vector<float> vertexVector;
 	
 	for (int i = 0; i < vertexStoppingCriteria*3; i++)
 	{
-		vertexVector.push_back(std::stof(allOfContent[i+3]));
+		vertexVector.push_back(std::stof(allOfContent[i+3])); //put only vertices 
 	}
 
 	int indexStartingPoint=3+vertexStoppingCriteria*3;
@@ -302,31 +306,31 @@ int main(int argc, char *argv[])
 	vector<int> indexVector;
 	for (int i = 0; i < indexStoppingCriteria*4; i++)
 	{
-		indexVector.push_back(std::stoi(allOfContent.at(indexStartingPoint+i)));
+		indexVector.push_back(std::stoi(allOfContent.at(indexStartingPoint+i))); //put only indices
 	}
 	for(int i=0;i<indexVector.size();i+=3)
 	{
-		indexVector.erase(indexVector.begin() + i );
+		indexVector.erase(indexVector.begin() + i );// erase the 0 3 6 so on 
 	}
-
 
 	vector<Vec> groupVertexVector;
 	for(int i=0; i <= vertexVector.size()-3; i+=3)
 	{
-		groupVertexVector.push_back(Vec(vertexVector.at(i),vertexVector.at(i+1),vertexVector.at(i+2)));
+		groupVertexVector.push_back(Vec(vertexVector.at(i),vertexVector.at(i+1),vertexVector.at(i+2))); //group vertices as x y z
 	}
 	
-	for (int i = 0; i <= indexVector.size()-3; i+=3)
+	for (int i = 0; i <= indexVector.size()-3; i+=3) //match vertices with indices
 	{
 		primitives.push_back(new Triangle(groupVertexVector.at(indexVector.at(i)), 
 										  groupVertexVector.at(indexVector.at(i+1)), 
-										  groupVertexVector.at(indexVector.at(i+2)),Vec(), Vec(1, 1., 0.9),REFR));
+										  groupVertexVector.at(indexVector.at(i+2)),Vec(), Vec(1, 1., 0.9),DIFF));
 	}
-	primitives.push_back(lighSource);
+	//END OF OFF LOADER
+	primitives.push_back(lighSource); //put back the light source
 
     //-- parameter info
 	if (argc >= 2 && *argv[1] == '?') {
-        printf("./cgrpt1 <samplesPerPixel = 4000> <y-resolution = 600>\n");
+        printf("./cgrpt1 <samplesPerPixel = 4000> <y-resolution = 600> <for Motion Blur: -withMP>\n");
         exit (0);
     }
 
@@ -375,8 +379,16 @@ int main(int argc, char *argv[])
 
 				Vec spos = so + su * sx + sv * sy;	  // 3d sample position on sensor
 				Vec lc = so + sd * f;				  // lens center (pinhole point)
-				Ray ray(lc, (lc - spos).normalize()); // ray through pinhole
-
+				
+				double randNumber=0.0; 
+				if (argc>3)
+				{
+					if(!strcmp(argv[3],"-withMB")) //argument check for motion blur or non motion blur
+					{
+						randNumber=rand01(time1,time2);
+					}
+				}
+				Ray ray(lc, (lc - spos).normalize(),randNumber); // ray through pinhole
 				r = r + radiance(ray, 0);		// evaluate radiance from this ray and accumulate
 			}
 			r = r / nSamplesPerPixel;			// normalize radiance by number of samples
