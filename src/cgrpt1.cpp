@@ -1,8 +1,8 @@
-#define MODEL "tetraeder.off" 
+#define MODEL "./meshes/tetraeder.off" //Change the model's name for different meshes
 #include <stdlib.h>  
 #include <stdio.h>      // Make: g++ -O3 -fopenmp cgrpt1.cpp -o cgrpt for compilation
 #include <omp.h>        // Usage: ./cgrpt <samplesPerPixel> <y-resolution>, e.g.: ./cgrpt 500 800 (for Motion Blur, pass "-withMB" 
-#include <random>	//						                           for Rolling Shutter, pass "withRSMB")  for execution					
+#include <random>		//																		   for Rolling shutter, pass "withRSMB")  for execution					
 #include <string>
 #include <vector>
 #include <fstream>
@@ -43,40 +43,18 @@ struct Vec {
 	Vec cross(const Vec& b) const { return Vec(y*b.z - z * b.y, z*b.x - x * b.z, x*b.y - y * b.x); }
 	double length() const { return sqrt(x*x + y * y + z * z); }
 };
-void RotateZ(Vec& v, double angle, double time)//Vertex Rotator Around Z Axis
+
+void RotateY(Vec& v, double angleAmount, double time)//Vertex Rotator Around Y Axis
 {
 	if(time!=0.0)
 	{
-		double x=cos(angle)*v.x-sin(angle)*v.y;
-		double y=sin(angle)*v.x+cos(angle)*v.y;
-		v.x=x*time;
-		v.y=y*time;
-		v.z=v.z*time;
-	}
-}
-void RotateY(Vec& v, double angle, double time)//Vertex Rotator Around Y Axis
-{
-	if(time!=0.0)
-	{
-		double x=cos(angle)*v.x+sin(angle)*v.z;
-		double z=-sin(angle)*v.x+cos(angle)*v.z;
+		double x=cos(angleAmount)*v.x+sin(angleAmount)*v.z;
+		double z=-sin(angleAmount)*v.x+cos(angleAmount)*v.z;
 		v.x=x*time;
 		v.y=v.y*time;
 		v.z=z*time;
 	}
 }
-void RotateX(Vec& v, double angle, double time)//Vertex Rotator Around X Axis
-{
-	if(time!=0.0)
-	{
-		double y=cos(angle)*v.y-sin(angle)*v.z;
-		double z=sin(angle)*v.y+cos(angle)*v.z;
-		v.x=v.x*time;
-		v.y=y*time;
-		v.z=z*time;
-	}
-}
-
 // 3d ray class
 struct Ray {
 	Vec o, d;		// origin and direction 
@@ -172,17 +150,19 @@ struct Triangle:public Primitive
 
 		if(applyMB==true)
 		{
-			RotateY(copyVertex1,100.0,ray.rayTime);
+			RotateY(copyVertex1,100.0,ray.rayTime);//Rotate the vertices
 			RotateY(copyVertex2,100.0,ray.rayTime);
 			RotateY(copyVertex3,100.0,ray.rayTime);
 		}
 		else
 		{
-			RotateZ(copyVertex1,0,ray.rayTime);
-			RotateZ(copyVertex2,0,ray.rayTime);
-			RotateZ(copyVertex3,0,ray.rayTime);
+			RotateY(copyVertex1,0,ray.rayTime);
+			RotateY(copyVertex2,0,ray.rayTime);
+			RotateY(copyVertex3,0,ray.rayTime);
 		}
 		
+		//const Vec& rayOrigin=ray.o;
+		//const Vec& directionOfRay=ray.d;
 		const double eps = 1e-4;
 
 		Vec edge1 = copyVertex2 - copyVertex1;
@@ -439,7 +419,7 @@ int main(int argc, char *argv[])
 					{
 						randNumber=rand01(time1,time2);
 					}
-					else if(!strcmp(argv[3],"-withRSMB")) //argument check for rolling shutter
+					else if(!strcmp(argv[3],"-withRSMB"))//Rolling Shutter
 					{
 						randNumber=(sy+sh/2.0)/sh;
 					}
