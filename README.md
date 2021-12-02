@@ -7,8 +7,9 @@ This project is based on Kevin Beason's SmallPT pathtracer. It extends the origi
 In order to compile the project -> "g++ -O3 -fopenmp cgrpt1.cpp -o cgrpt"
 In order to execute the program -> ./cgrpt <samplesPerPixel> <y-resolution>, e.g.: ./cgrpt 500 800 (pass additional "-withMB" argument for motion blur) 
 
-Result without motion blur.
-![Preview](https://user-images.githubusercontent.com/43638551/143770271-cc3ce686-9a96-4783-b38f-848bde2d8e8b.png)
+Result without motion blur.(1200x800, 10K Samples)
+![fe](https://user-images.githubusercontent.com/43638551/144505443-63bf9e9a-e7a5-407f-9385-9b305d8d0c76.png)
+
 
 Result with motion blur in 10K Sample.
 
