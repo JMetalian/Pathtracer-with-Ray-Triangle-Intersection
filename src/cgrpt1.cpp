@@ -1,8 +1,8 @@
 #define MODEL "tetraeder.off" 
 #include <stdlib.h>  
 #include <stdio.h>      // Make: g++ -O3 -fopenmp cgrpt1.cpp -o cgrpt for compilation
-#include <omp.h>        // Usage: ./cgrpt <samplesPerPixel> <y-resolution>, e.g.: ./cgrpt 500 800 (for Motion Blur, pass "-withMB")  for execution
-#include <random>
+#include <omp.h>        // Usage: ./cgrpt <samplesPerPixel> <y-resolution>, e.g.: ./cgrpt 500 800 (for Motion Blur, pass "-withMB" 
+#include <random>	//						                           for Rolling Shutter, pass "withRSMB")  for execution					
 #include <string>
 #include <vector>
 #include <fstream>
@@ -43,8 +43,40 @@ struct Vec {
 	Vec cross(const Vec& b) const { return Vec(y*b.z - z * b.y, z*b.x - x * b.z, x*b.y - y * b.x); }
 	double length() const { return sqrt(x*x + y * y + z * z); }
 };
-const double time1=0.1;
-const double time2=1.5;
+void RotateZ(Vec& v, double angle, double time)//Vertex Rotator Around Z Axis
+{
+	if(time!=0.0)
+	{
+		double x=cos(angle)*v.x-sin(angle)*v.y;
+		double y=sin(angle)*v.x+cos(angle)*v.y;
+		v.x=x*time;
+		v.y=y*time;
+		v.z=v.z*time;
+	}
+}
+void RotateY(Vec& v, double angle, double time)//Vertex Rotator Around Y Axis
+{
+	if(time!=0.0)
+	{
+		double x=cos(angle)*v.x+sin(angle)*v.z;
+		double z=-sin(angle)*v.x+cos(angle)*v.z;
+		v.x=x*time;
+		v.y=v.y*time;
+		v.z=z*time;
+	}
+}
+void RotateX(Vec& v, double angle, double time)//Vertex Rotator Around X Axis
+{
+	if(time!=0.0)
+	{
+		double y=cos(angle)*v.y-sin(angle)*v.z;
+		double z=sin(angle)*v.y+cos(angle)*v.z;
+		v.x=v.x*time;
+		v.y=y*time;
+		v.z=z*time;
+	}
+}
+
 // 3d ray class
 struct Ray {
 	Vec o, d;		// origin and direction 
@@ -96,14 +128,16 @@ struct Triangle:public Primitive
 	Vec vertex1;
 	Vec vertex2;
 
+	bool applyMB;
+
 	Triangle(
 			const Vec& vert0,
 			const Vec& vert1,
 			const Vec& vert2,
 			const Vec& emission,
 			const Vec& color,
-			Refl_t reflectionType
-			)
+			Refl_t reflectionType,
+			bool applyMB_=false)
 	{
 		vertex0=vert0;
 		vertex1=vert1;
@@ -111,6 +145,7 @@ struct Triangle:public Primitive
 		c=color;
 		e=emission;
 		refl=reflectionType;
+		applyMB=applyMB_;
 	}
 // REAL TIME RENDERING 4th Edition, Pseuodocode Möller-Trumbore Algorithm
 // RayTriIntersect(o, d, p0, p1, p2)
@@ -131,13 +166,28 @@ struct Triangle:public Primitive
 // 14 : return (INTERSECT, u, v, t);
 	virtual double intersect(const Ray &ray, Vec& x, Vec& n) const
 	{
-		const Vec& rayOrigin=ray.o;
-		const Vec& directionOfRay=ray.d;
+		Vec copyVertex1=vertex0;
+		Vec copyVertex2=vertex1;
+		Vec copyVertex3=vertex2;
+
+		if(applyMB==true)
+		{
+			RotateY(copyVertex1,100.0,ray.rayTime);
+			RotateY(copyVertex2,100.0,ray.rayTime);
+			RotateY(copyVertex3,100.0,ray.rayTime);
+		}
+		else
+		{
+			RotateZ(copyVertex1,0,ray.rayTime);
+			RotateZ(copyVertex2,0,ray.rayTime);
+			RotateZ(copyVertex3,0,ray.rayTime);
+		}
+		
 		const double eps = 1e-4;
 
-		Vec edge1 = vertex1 - vertex0;
-		Vec edge2 = vertex2 - vertex0;
-		n = directionOfRay.cross(edge2);
+		Vec edge1 = copyVertex2 - copyVertex1;
+		Vec edge2 = copyVertex3 - copyVertex1;
+		n = ray.d.cross(edge2);
 		double det = edge1.dot(n);
 		
 		if (det > -eps && det < eps)
@@ -147,7 +197,7 @@ struct Triangle:public Primitive
 		}
 
 		double inverseDet = 1.0/det;
-		Vec s = rayOrigin - vertex0;
+		Vec s = ray.o - copyVertex1;
 		double u = s.dot(n) * inverseDet;
 
 		if (u < 0.0 || u > 1.0)
@@ -156,7 +206,7 @@ struct Triangle:public Primitive
 		}
 
 		Vec q = s.cross(edge1);
-		double v = directionOfRay.dot(q)*inverseDet ;
+		double v = ray.d.dot(q)*inverseDet ;
 
 		if (v < 0.0 || u + v > 1.0 )
 		{
@@ -167,7 +217,7 @@ struct Triangle:public Primitive
 		if (t > eps) // ray intersection
 		{		
 			n=edge1.cross(edge2).normalize();
-			x = rayOrigin + directionOfRay * t;
+			x = ray.o + ray.d * t;
 			return t;
 		}
 		else //line intersection
@@ -268,6 +318,8 @@ Vec radiance(const Ray &r, int depth)
 		return obj.e + f.mult(L);
 	}
 }
+const double time1=0.01;//Time Interval
+const double time2=1.5;//Time Interval
 int main(int argc, char *argv[]) 
 {
 	Primitive* lighSource=primitives.back();//Save the light source
@@ -323,7 +375,7 @@ int main(int argc, char *argv[])
 	{
 		primitives.push_back(new Triangle(groupVertexVector.at(indexVector.at(i)), 
 										  groupVertexVector.at(indexVector.at(i+1)), 
-										  groupVertexVector.at(indexVector.at(i+2)),Vec(), Vec(1, 1., 0.9),DIFF));
+										  groupVertexVector.at(indexVector.at(i+2)),Vec(), Vec(1, 1., 0.9),DIFF,true));
 	}
 	//END OF OFF LOADER
 	primitives.push_back(lighSource); //put back the light source
@@ -387,12 +439,16 @@ int main(int argc, char *argv[])
 					{
 						randNumber=rand01(time1,time2);
 					}
+					else if(!strcmp(argv[3],"-withRSMB")) //argument check for rolling shutter
+					{
+						randNumber=(sy+sh/2.0)/sh;
+					}
 				}
 				Ray ray(lc, (lc - spos).normalize(),randNumber); // ray through pinhole
 				r = r + radiance(ray, 0);		// evaluate radiance from this ray and accumulate
 			}
 			r = r / nSamplesPerPixel;			// normalize radiance by number of samples
-
+			
 			int i = (resy - y - 1)*resx + x;	// buffer location of this pixel
 			pixels[i] = pixels[i] + Vec(clamp(r.x), clamp(r.y), clamp(r.z));
 		}
