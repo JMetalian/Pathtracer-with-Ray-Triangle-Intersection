@@ -1,4 +1,4 @@
-# Pathtracer-with-Ray-Triangle-Intersection
+# Pathtracer with Ray Triangle Intersection
 This project is based on Kevin Beason's SmallPT pathtracer. It extends the original project by adding:
 -Möller-Trumbore ray-triangle intersection algorithm,
 -.OFF file loader,
